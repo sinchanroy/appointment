@@ -1,0 +1,239 @@
+---
+# PersistentVolumeClaim for state persistence
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: appointment-state-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard
+
+---
+# Secret holding Telegram bot credentials
+apiVersion: v1
+kind: Secret
+metadata:
+  name: telegram-credentials
+type: Opaque
+stringData:
+  bot-token: "YOUR_TELEGRAM_BOT_TOKEN"  # ← from @BotFather
+  chat-id: "YOUR_TELEGRAM_CHAT_ID"      # ← from @userinfobot or getUpdates
+
+---
+# Secret holding application-specific config. Kept as a Secret (not a
+# ConfigMap) since jurisdiction/service type reveal personal circumstances.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: appointment-config
+type: Opaque
+stringData:
+  reference-no: "YOUR_APPLICATION_REFERENCE_NO"
+  jurisdiction: "YOUR_JURISDICTION"     # e.g. North Rhine-Westphalia
+  service-type: "YOUR_SERVICE_TYPE"     # e.g. Fresh OCI
+
+---
+# ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: appointment-monitor
+
+---
+# CronJob - runs every 15 minutes
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: oci-appointment-monitor
+spec:
+  # Every 15 minutes: */15 * * * *
+  # Or customize:
+  # Morning (07:00-10:00 Berlin): */15 7-9 * * *
+  # With additional hourly: (run every hour + extra 15-min checks at 7,8,9am)
+  schedule: "*/15 * * * *"
+
+  # Keep 3 successful and 3 failed job records
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
+  # Job timeout
+  jobTemplate:
+    spec:
+      # This job will fail if it takes longer than 5 minutes
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 3600
+
+      template:
+        metadata:
+          labels:
+            app: oci-appointment-monitor
+        spec:
+          serviceAccountName: appointment-monitor
+          restartPolicy: Never
+
+          # Pod security context
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+
+          containers:
+          - name: monitor
+            image: appointment-monitor:latest
+            imagePullPolicy: IfNotPresent
+
+            # Environment variables
+            env:
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: telegram-credentials
+                  key: bot-token
+            - name: TELEGRAM_CHAT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: telegram-credentials
+                  key: chat-id
+            - name: APPLICATION_REFERENCE_NO
+              valueFrom:
+                secretKeyRef:
+                  name: appointment-config
+                  key: reference-no
+            - name: JURISDICTION
+              valueFrom:
+                secretKeyRef:
+                  name: appointment-config
+                  key: jurisdiction
+            - name: SERVICE_TYPE
+              valueFrom:
+                secretKeyRef:
+                  name: appointment-config
+                  key: service-type
+
+            # Resource limits
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+
+            # Volume mounts for state persistence
+            volumeMounts:
+            - name: state
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+
+            # Container security context
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - ALL
+
+          # Volumes
+          volumes:
+          - name: state
+            persistentVolumeClaim:
+              claimName: appointment-state-pvc
+          - name: tmp
+            emptyDir: {}
+
+---
+# Alternative: Every hour + every 15 mins during morning (7-10 Berlin time)
+# Use this CronJob instead if you want the smart schedule
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: oci-appointment-monitor-smart
+spec:
+  # Hourly (0 * * * *) + every 15 mins at 7,8,9 am Berlin time
+  schedule: "0 * * * *"
+
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 3600
+
+      template:
+        metadata:
+          labels:
+            app: oci-appointment-monitor-smart
+        spec:
+          serviceAccountName: appointment-monitor
+          restartPolicy: Never
+
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+
+          containers:
+          - name: monitor
+            image: appointment-monitor:latest
+            imagePullPolicy: IfNotPresent
+
+            env:
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: telegram-credentials
+                  key: bot-token
+            - name: TELEGRAM_CHAT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: telegram-credentials
+                  key: chat-id
+            - name: APPLICATION_REFERENCE_NO
+              valueFrom:
+                secretKeyRef:
+                  name: appointment-config
+                  key: reference-no
+            - name: JURISDICTION
+              valueFrom:
+                secretKeyRef:
+                  name: appointment-config
+                  key: jurisdiction
+            - name: SERVICE_TYPE
+              valueFrom:
+                secretKeyRef:
+                  name: appointment-config
+                  key: service-type
+
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+
+            volumeMounts:
+            - name: state
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - ALL
+
+          volumes:
+          - name: state
+            persistentVolumeClaim:
+              claimName: appointment-state-pvc
+          - name: tmp
+            emptyDir: {}

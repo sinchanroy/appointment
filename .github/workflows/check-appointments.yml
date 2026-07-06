@@ -1,0 +1,48 @@
+name: Check OCI Appointments
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+# Prevent overlapping runs if one check takes longer than the schedule interval
+concurrency:
+  group: check-appointments
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Run appointment check
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          APPLICATION_REFERENCE_NO: ${{ secrets.APPLICATION_REFERENCE_NO }}
+          JURISDICTION: ${{ secrets.JURISDICTION }}
+          SERVICE_TYPE: ${{ secrets.SERVICE_TYPE }}
+          STATE_FILE_PATH: ${{ github.workspace }}/state/appointment-state.json
+        run: node app.js
+
+      - name: Persist updated state
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -f state/appointment-state.json ]; then
+            git add state/appointment-state.json
+            git diff --cached --quiet || git commit -m "Update appointment state"
+            git push
+          fi

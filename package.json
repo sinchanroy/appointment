@@ -1,0 +1,14 @@
+{
+  "name": "oci-appointment-monitor",
+  "version": "1.0.0",
+  "description": "Monitor OCI appointment availability and send Telegram notifications",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dotenv": "^17.4.2",
+    "puppeteer": "^24.15.0"
+  }
+}
