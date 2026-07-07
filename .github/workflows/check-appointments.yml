@@ -40,8 +40,8 @@ jobs:
       - name: Persist updated state
         if: always()
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "Sinchan Roy"
+          git config user.email "sinchanroy4890@gmail.com"
           if [ -f state/appointment-state.json ]; then
             git add state/appointment-state.json
             git diff --cached --quiet || git commit -m "Update appointment state"
