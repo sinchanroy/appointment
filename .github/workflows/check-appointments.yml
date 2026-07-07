@@ -34,6 +34,7 @@ jobs:
           JURISDICTION: ${{ secrets.JURISDICTION }}
           SERVICE_TYPE: ${{ secrets.SERVICE_TYPE }}
           STATE_FILE_PATH: ${{ github.workspace }}/state/appointment-state.json
+          NOTIFICATION_MODE: ${{ vars.NOTIFICATION_MODE || 'when_changed' }}
         run: node app.js
 
       - name: Persist updated state

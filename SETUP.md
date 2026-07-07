@@ -40,6 +40,8 @@ The workflow runs every 15 minutes automatically (`.github/workflows/check-appoi
 
 To change the schedule, edit the `cron:` line at the top of `.github/workflows/check-appointments.yml`. To change service category, or tune how many months/results are scanned, add the optional vars from `.env.example` (e.g. `SERVICE_CATEGORY`, `MAX_MONTHS_TO_CHECK`) to the same `env:` block — these aren't personal, so they're fine as plain values directly in the workflow file rather than secrets.
 
+**Notification mode** is already wired up as a repo *variable* (not a secret, since it's not personal) — no code or workflow edits needed. By default it only notifies when the earliest slot found is new/earlier than the last one notified. To get notified on every single run that finds any slot (noisier, but sometimes useful), go to **Settings → Secrets and variables → Actions → Variables tab → New repository variable** and add `NOTIFICATION_MODE` = `always`. Set it back to `when_changed` (or delete the variable) to return to the quiet default.
+
 ### Troubleshooting GitHub Actions
 - **Workflow doesn't appear / never runs on schedule**: scheduled workflows only run on the repo's default branch, and GitHub disables them automatically after 60 days of repo inactivity — push a commit or trigger manually to reactivate.
 - **"Permission denied" on the git push step**: repeat step A3 — org-level settings can also restrict this separately under the organization's Actions settings.
@@ -153,6 +155,7 @@ Edit these in `k8s-cronjob.yaml` as needed:
 | **Check frequency** | `spec.schedule` | Every 15 mins | Use cron syntax: `*/15 * * * *` |
 | **Telegram credentials** | `telegram-credentials` Secret | - | REQUIRED: Paste your bot token & chat ID |
 | **Reference no. / jurisdiction / service** | `appointment-config` Secret | - | REQUIRED: `reference-no`, `jurisdiction`, `service-type` |
+| **Notification mode** | `NOTIFICATION_MODE` env var on the container | `when_changed` | Set to `always` to notify on every run that finds a slot, not just new/earlier ones |
 | **Storage size** | `spec.resources.requests.storage` | 1Gi | Increase if needed |
 | **Memory limit** | `limits.memory` | 512Mi | Increase for slower machines |
 | **CPU limit** | `limits.cpu` | 500m | Increase for faster checks |

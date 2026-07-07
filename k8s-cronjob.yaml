@@ -113,6 +113,11 @@ spec:
                 secretKeyRef:
                   name: appointment-config
                   key: service-type
+            # 'when_changed' (default) only notifies on a new/earlier slot;
+            # 'always' notifies on every run that finds any slot. Not personal,
+            # so this can stay a plain value rather than a secret.
+            - name: NOTIFICATION_MODE
+              value: "when_changed"
 
             # Resource limits
             resources:
@@ -209,6 +214,8 @@ spec:
                 secretKeyRef:
                   name: appointment-config
                   key: service-type
+            - name: NOTIFICATION_MODE
+              value: "when_changed"
 
             resources:
               requests:

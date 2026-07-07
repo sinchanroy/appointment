@@ -16,6 +16,9 @@ const SERVICE_TYPE = process.env.SERVICE_TYPE;
 const APPLICATION_REFERENCE_NO = process.env.APPLICATION_REFERENCE_NO;
 const MAX_MONTHS_TO_CHECK = parseInt(process.env.MAX_MONTHS_TO_CHECK || '3', 10);
 const MAX_RESULTS_TO_FIND = parseInt(process.env.MAX_RESULTS_TO_FIND || '3', 10);
+// 'always' notifies on every run that finds slots; 'when_changed' (default) only
+// notifies when the earliest slot is new or earlier than the last one notified
+const NOTIFICATION_MODE = process.env.NOTIFICATION_MODE === 'always' ? 'always' : 'when_changed';
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -286,6 +289,7 @@ async function checkAppointments() {
       const earliest = slots[0];
       const earliestDateTime = `${earliest.date} ${earliest.time}`;
       const isNewOrEarlier = !state.earliestDateTime || earliestDateTime < state.earliestDateTime;
+      const shouldNotify = NOTIFICATION_MODE === 'always' || isNewOrEarlier;
 
       console.log(`\n✅ FOUND ${slots.length} AVAILABLE SLOT(S):`);
       slots.forEach((s, i) => {
@@ -294,24 +298,28 @@ async function checkAppointments() {
 
       if (isNewOrEarlier) {
         console.log(`\n🎉 NEW/EARLIER SLOT FOUND!`);
+      } else {
+        console.log(`No change from previous earliest: ${state.earliestDateTime}`);
+      }
 
+      if (shouldNotify) {
         const slotLines = slots
           .map((s, i) => `${i + 1}. <b>${MONTH_NAMES[s.month]} ${s.day}, ${s.year}</b> — ${formatTimeRange(s.time)}`)
           .join('\n');
+        const title = isNewOrEarlier
+          ? '🎉 <b>New OCI Appointment Slot(s) Found!</b>'
+          : '📋 <b>OCI Appointment Slot(s) Still Available</b>';
 
-        // Send Telegram notification
         await sendTelegramNotification({
-          text: `🎉 <b>New OCI Appointment Slot(s) Found!</b>\n\n${slotLines}\n\n` +
-            `<i>Last checked: ${new Date().toISOString()}</i>`,
+          text: `${title}\n\n${slotLines}\n\n<i>Last checked: ${new Date().toISOString()}</i>`,
           button: { text: 'Book Appointment', url: APP_URL }
         });
+      }
 
-        // Update state
+      if (isNewOrEarlier) {
         state.earliestDateTime = earliestDateTime;
         state.lastCheck = new Date().toISOString();
         saveState(state);
-      } else {
-        console.log(`No change from previous earliest: ${state.earliestDateTime}`);
       }
     } else {
       console.log(`❌ No available slots found in the next ${MAX_MONTHS_TO_CHECK} month(s)`);
