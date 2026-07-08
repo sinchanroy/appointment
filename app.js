@@ -51,7 +51,7 @@ function loadState() {
   } catch (err) {
     console.log('No previous state found, starting fresh');
   }
-  return { earliestDateTime: null, lastCheck: new Date().toISOString() };
+  return { earliestDateTime: null, lastCheck: new Date().toISOString(), lastDailySummaryDate: null };
 }
 
 // Save state
@@ -129,6 +129,19 @@ function formatTimeRange(rangeId) {
   const fmt = t => `${t.slice(0, 2)}:${t.slice(2, 4)}`;
   const [start, end] = rangeId.split('-');
   return `${fmt(start)}–${fmt(end)}`;
+}
+
+// Today's date (YYYY-MM-DD) in the jurisdiction's local timezone, so the daily
+// summary resets at local midnight rather than UTC midnight
+function getTodayDateString() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Berlin' });
+}
+
+// Turn a stored "YYYY-MM-DD HHMM-HHMM" earliestDateTime back into a readable line
+function formatStoredDateTime(stored) {
+  const [datePart, timePart] = stored.split(' ');
+  const [year, month, day] = datePart.split('-').map(Number);
+  return `${MONTH_NAMES[month - 1]} ${day}, ${year} — ${formatTimeRange(timePart)}`;
 }
 
 // Click a specific day cell in the currently displayed calendar month,
@@ -285,6 +298,9 @@ async function checkAppointments() {
     await fillApplicationForm(page);
     const slots = await findAvailableSlots(page);
 
+    let notifiedThisRun = false;
+    let stateChanged = false;
+
     if (slots.length > 0) {
       const earliest = slots[0];
       const earliestDateTime = `${earliest.date} ${earliest.time}`;
@@ -314,15 +330,37 @@ async function checkAppointments() {
           text: `${title}\n\n${slotLines}\n\n<i>Last checked: ${new Date().toISOString()}</i>`,
           button: { text: 'Book Appointment', url: APP_URL }
         });
+        notifiedThisRun = true;
       }
 
       if (isNewOrEarlier) {
         state.earliestDateTime = earliestDateTime;
-        state.lastCheck = new Date().toISOString();
-        saveState(state);
+        stateChanged = true;
       }
     } else {
       console.log(`❌ No available slots found in the next ${MAX_MONTHS_TO_CHECK} month(s)`);
+    }
+
+    // Guarantee at least one Telegram update per day, even when nothing changed
+    const today = getTodayDateString();
+    if (state.lastDailySummaryDate !== today) {
+      if (!notifiedThisRun) {
+        const summaryText = state.earliestDateTime
+          ? `📋 <b>Daily Appointment Check</b>\n\nNo earlier appointment found today.\nStill the earliest appointment date is <b>${formatStoredDateTime(state.earliestDateTime)}</b>.\n\n<i>Last checked: ${new Date().toISOString()}</i>`
+          : `📋 <b>Daily Appointment Check</b>\n\nNo appointment slots found today.\n\n<i>Last checked: ${new Date().toISOString()}</i>`;
+
+        await sendTelegramNotification({
+          text: summaryText,
+          button: { text: 'Book Appointment', url: APP_URL }
+        });
+      }
+      state.lastDailySummaryDate = today;
+      stateChanged = true;
+    }
+
+    if (stateChanged) {
+      state.lastCheck = new Date().toISOString();
+      saveState(state);
     }
 
     await browser.close();
